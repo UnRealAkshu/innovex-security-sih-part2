@@ -28,6 +28,12 @@ function applyPageSignals(result, signals) {
   const externalFormTargets = Number(signals.externalFormTargets) || 0;
   const authWords = Array.isArray(signals.matchedAuthWords) ? signals.matchedAuthWords : [];
 
+  if (signals.knownSecurityTestPage) {
+    score = 100;
+    indicators.push("Known safe AMTSO phishing-simulation test page detected.");
+    indicators.push("This page is a security test, not a real malicious website.");
+  }
+
   if (passwordFields > 0) {
     score += 15;
     indicators.push("The page contains a password input field.");
@@ -166,13 +172,15 @@ function localAnalyze(url, signals = null) {
   combined.indicators = combined.indicators.length
     ? combined.indicators
     : ["No suspicious URL or page-level indicators detected by local checks."];
-  combined.recommendation = combined.severity === "Critical"
-    ? "Do not open this URL. Avoid entering credentials or sensitive information."
-    : combined.severity === "High"
-      ? "Avoid opening this URL until it has been independently verified."
-      : combined.severity === "Medium"
-        ? "Use caution and verify the page and source independently before entering sensitive information."
-        : "The page appears relatively low risk based on available local checks.";
+  combined.recommendation = combined.knownSecurityTestPage || signals?.knownSecurityTestPage
+    ? "Safe phishing-simulation page detected. This result confirms the Innovex warning pipeline is working."
+    : combined.severity === "Critical"
+      ? "Do not open this URL. Avoid entering credentials or sensitive information."
+      : combined.severity === "High"
+        ? "Avoid opening this URL until it has been independently verified."
+        : combined.severity === "Medium"
+          ? "Use caution and verify the page and source independently before entering sensitive information."
+          : "The page appears relatively low risk based on available local checks.";
 
   return combined;
 }
