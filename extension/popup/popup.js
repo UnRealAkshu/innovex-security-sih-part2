@@ -6,13 +6,24 @@ const indicators = document.querySelector("#indicators");
 const recommendation = document.querySelector("#recommendation");
 const rescanButton = document.querySelector("#rescan");
 
+function severityFromScore(value) {
+  if (!Number.isFinite(value)) return "Unknown";
+  if (value >= 75) return "Critical";
+  if (value >= 50) return "High";
+  if (value >= 25) return "Medium";
+  return "Low";
+}
+
 function renderResult(data) {
   state.hidden = true;
   resultBox.hidden = false;
 
-  score.textContent = data?.riskScore == null ? "—" : `${data.riskScore}/100`;
-  severity.textContent = data?.severity || "Unknown";
-  severity.dataset.severity = String(data?.severity || "unknown").toLowerCase();
+  const riskScore = Number.isFinite(data?.riskScore) ? data.riskScore : null;
+  const derivedSeverity = severityFromScore(riskScore);
+
+  score.textContent = riskScore == null ? "—" : `${riskScore}/100`;
+  severity.textContent = derivedSeverity;
+  severity.dataset.severity = derivedSeverity.toLowerCase();
 
   indicators.replaceChildren();
   const items = Array.isArray(data?.indicators) && data.indicators.length
@@ -25,7 +36,8 @@ function renderResult(data) {
     indicators.appendChild(li);
   }
 
-  recommendation.textContent = data?.recommendation || "Review this URL carefully before continuing.";
+  const recommendation = data?.recommendation || "Review this URL carefully before continuing.";
+  document.querySelector("#recommendation").textContent = recommendation;
 }
 
 async function scanCurrentTab(force = false) {
