@@ -29,17 +29,17 @@ function applyPageSignals(result, signals) {
   const authWords = Array.isArray(signals.matchedAuthWords) ? signals.matchedAuthWords : [];
 
   if (passwordFields > 0) {
-    score += 10;
+    score += 15;
     indicators.push("The page contains a password input field.");
   }
 
   if (passwordFields > 0 && (emailFields > 0 || authWords.length > 0)) {
-    score += 5;
+    score += 15;
     indicators.push("The page appears to collect login/account credentials.");
   }
 
   if (sensitiveFields > 0) {
-    score += 10;
+    score += 15;
     indicators.push("The page contains a field associated with sensitive information.");
   }
 
@@ -48,13 +48,18 @@ function applyPageSignals(result, signals) {
     indicators.push("A form submits data to an external origin.");
   }
 
+  if (authWords.length >= 2 && passwordFields > 0) {
+    score += 5;
+    indicators.push("Multiple authentication-related terms appear alongside a password field.");
+  }
+
   if (signals.hasPaymentLanguage && sensitiveFields > 0) {
-    score += 10;
+    score += 15;
     indicators.push("Payment or billing language appears near sensitive input fields.");
   }
 
   if (signals.hasUrgencyLanguage && (passwordFields > 0 || sensitiveFields > 0)) {
-    score += 10;
+    score += 15;
     indicators.push("Urgency language appears on a page requesting sensitive information.");
   }
 
