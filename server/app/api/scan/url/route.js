@@ -43,10 +43,7 @@ function getSeverity(score) {
 
 async function checkURLhaus(url) {
   const authKey = process.env.URLHAUS_AUTH_KEY;
-
-  if (!authKey) {
-    return { checked: false, found: false, message: "URLhaus lookup is not configured on the scan server.", tags: [] };
-  }
+  if (!authKey) return { checked: false, found: false, message: "URLhaus lookup is not configured on the scan server.", tags: [] };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -55,18 +52,13 @@ async function checkURLhaus(url) {
     const body = new URLSearchParams({ url });
     const response = await fetch("https://urlhaus-api.abuse.ch/v1/url/", {
       method: "POST",
-      headers: {
-        "Auth-Key": authKey,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
+      headers: { "Auth-Key": authKey, "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
       signal: controller.signal,
       cache: "no-store",
     });
 
-    if (!response.ok) {
-      return { checked: false, found: false, message: "URLhaus could not be reached. Heuristic analysis was still completed.", tags: [] };
-    }
+    if (!response.ok) return { checked: false, found: false, message: "URLhaus could not be reached. Heuristic analysis was still completed.", tags: [] };
 
     const data = await response.json();
     const tags = Array.isArray(data?.tags) ? data.tags.filter((tag) => typeof tag === "string") : [];
@@ -83,10 +75,7 @@ async function checkURLhaus(url) {
       };
     }
 
-    if (data?.query_status === "no_results") {
-      return { checked: true, found: false, message: "URLhaus returned no matching malicious URL record. This does not guarantee safety.", tags };
-    }
-
+    if (data?.query_status === "no_results") return { checked: true, found: false, message: "URLhaus returned no matching malicious URL record. This does not guarantee safety.", tags };
     return { checked: false, found: false, message: "URLhaus returned an unexpected response. Heuristic analysis was still completed.", tags };
   } catch {
     return { checked: false, found: false, message: "URLhaus lookup failed. Heuristic analysis was still completed.", tags: [] };
@@ -104,9 +93,7 @@ function analyzeUrl(rawUrl) {
   }
 
   const protocol = parsed.protocol.replace(":", "").toLowerCase();
-  if (!["http", "https"].includes(protocol)) {
-    return { error: "Only HTTP and HTTPS URLs can be scanned." };
-  }
+  if (!["http", "https"].includes(protocol)) return { error: "Only HTTP and HTTPS URLs can be scanned." };
 
   const hostname = parsed.hostname.toLowerCase();
   const normalizedUrl = parsed.toString();
@@ -172,6 +159,50 @@ function analyzeUrl(rawUrl) {
   return { normalizedUrl, hostname, protocol, riskScore: Math.min(100, Math.max(0, riskScore)), indicators };
 }
 
+function applyPageSignals(baseScore, baseIndicators, signals) {
+  let riskScore = baseScore;
+  const indicators = [...baseIndicators];
+  if (!signals || typeof signals !== "object") return { riskScore, indicators };
+
+  const passwordFields = Number(signals.passwordFields) || 0;
+  const emailFields = Number(signals.emailFields) || 0;
+  const sensitiveFields = Number(signals.sensitiveFields) || 0;
+  const externalFormTargets = Number(signals.externalFormTargets) || 0;
+  const authWords = Array.isArray(signals.matchedAuthWords) ? signals.matchedAuthWords : [];
+
+  if (passwordFields > 0) {
+    riskScore += 10;
+    indicators.push("The page contains a password input field.");
+  }
+
+  if (passwordFields > 0 && (emailFields > 0 || authWords.length > 0)) {
+    riskScore += 5;
+    indicators.push("The page appears to collect login/account credentials.");
+  }
+
+  if (sensitiveFields > 0) {
+    riskScore += 10;
+    indicators.push("The page contains a field associated with sensitive information.");
+  }
+
+  if (externalFormTargets > 0) {
+    riskScore += 25;
+    indicators.push("A form submits data to an external origin.");
+  }
+
+  if (signals.hasPaymentLanguage && sensitiveFields > 0) {
+    riskScore += 10;
+    indicators.push("Payment or billing language appears near sensitive input fields.");
+  }
+
+  if (signals.hasUrgencyLanguage && (passwordFields > 0 || sensitiveFields > 0)) {
+    riskScore += 10;
+    indicators.push("Urgency language appears on a page requesting sensitive information.");
+  }
+
+  return { riskScore: Math.min(100, Math.max(0, riskScore)), indicators: [...new Set(indicators)] };
+}
+
 export async function POST(request) {
   try {
     if (EXTENSION_API_KEY) {
@@ -181,6 +212,7 @@ export async function POST(request) {
 
     const body = await request.json();
     const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
+    const pageSignals = body?.pageSignals && typeof body.pageSignals === "object" ? body.pageSignals : null;
 
     if (!rawUrl) return json({ success: false, error: "Please provide a URL." }, 400);
     if (rawUrl.length > 2048) return json({ success: false, error: "URL is too long." }, 400);
@@ -189,8 +221,9 @@ export async function POST(request) {
     if (analysis.error) return json({ success: false, error: analysis.error }, 400);
 
     const threatIntelligence = await checkURLhaus(analysis.normalizedUrl);
-    let riskScore = analysis.riskScore;
-    const indicators = [...analysis.indicators];
+    const pageAnalysis = applyPageSignals(analysis.riskScore, analysis.indicators, pageSignals);
+    let riskScore = pageAnalysis.riskScore;
+    const indicators = [...pageAnalysis.indicators];
 
     if (threatIntelligence.found) {
       riskScore = 100;
@@ -199,14 +232,15 @@ export async function POST(request) {
       if (threatIntelligence.urlStatus) indicators.push(`URLhaus status: ${threatIntelligence.urlStatus}.`);
     }
 
+    riskScore = Math.min(100, Math.max(0, riskScore));
     const severity = getSeverity(riskScore);
     const threatDetected = riskScore >= 30 || threatIntelligence.found;
     const confidence = threatIntelligence.found ? 99 : Math.min(99, Math.max(70, 100 - Math.abs(50 - riskScore)));
 
-    let recommendation = "The URL appears relatively low risk based on the available checks. Still verify the source before opening it.";
-    if (severity === "Medium") recommendation = "Use caution. Verify the sender or website independently before continuing.";
-    if (severity === "High") recommendation = "Avoid opening this URL until it has been independently verified. Do not enter passwords or payment information.";
-    if (severity === "Critical") recommendation = "Do not open this URL. Treat it as potentially dangerous and avoid entering credentials or sensitive information.";
+    let recommendation = "The page appears relatively low risk based on the available checks. Still verify the source before entering sensitive information.";
+    if (severity === "Medium") recommendation = "Use caution. Review the page and verify the source independently before entering sensitive information.";
+    if (severity === "High") recommendation = "Avoid using this page until it has been independently verified. Do not enter passwords or payment information.";
+    if (severity === "Critical") recommendation = "Do not use this page. Treat it as potentially dangerous and avoid entering credentials or sensitive information.";
     if (threatIntelligence.found) recommendation = "Do not open this URL. URLhaus identified it as a known malicious URL. Avoid entering credentials, payment information or other sensitive data.";
 
     return json({
@@ -218,10 +252,11 @@ export async function POST(request) {
       threatDetected,
       domain: analysis.hostname,
       protocol: analysis.protocol,
-      analysisType: threatIntelligence.checked ? "URL heuristic analysis + URLhaus threat intelligence" : "URL heuristic analysis",
-      indicators,
+      analysisType: threatIntelligence.checked ? "URL heuristic + page signals + URLhaus threat intelligence" : "URL heuristic + page signals",
+      indicators: [...new Set(indicators)],
       recommendation,
       threatIntelligence,
+      pageSignals,
     });
   } catch (error) {
     console.error("Extension URL scan error:", error);
