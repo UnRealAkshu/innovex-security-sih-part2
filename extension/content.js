@@ -7,19 +7,37 @@
 
   function showWarning(result) {
     removeWarning();
-    if (!result || !["high", "critical"].includes(String(result.severity).toLowerCase())) return;
+
+    const severity = String(result?.severity || "").toLowerCase();
+    if (!result || !["high", "critical"].includes(severity)) return;
 
     const banner = document.createElement("div");
     banner.id = id;
-    banner.innerHTML = `
-      <div class="innovex-warning-card">
-        <div class="innovex-warning-title">⚠️ Innovex Security Warning</div>
-        <div class="innovex-warning-text">This page may be dangerous. Risk level: <strong>${result.severity}</strong>${result.riskScore != null ? ` (${result.riskScore}/100)` : ""}.</div>
-        <div class="innovex-warning-recommendation">${result.recommendation || "Avoid entering passwords, OTPs, or payment details."}</div>
-        <button id="innovex-dismiss-warning">Continue carefully</button>
-      </div>`;
+
+    const card = document.createElement("div");
+    card.className = "innovex-warning-card";
+
+    const title = document.createElement("div");
+    title.className = "innovex-warning-title";
+    title.textContent = "⚠️ Innovex Security Warning";
+
+    const text = document.createElement("div");
+    text.className = "innovex-warning-text";
+    text.textContent = `This page may be dangerous. Risk level: ${result.severity}${result.riskScore != null ? ` (${result.riskScore}/100)` : ""}.`;
+
+    const recommendation = document.createElement("div");
+    recommendation.className = "innovex-warning-recommendation";
+    recommendation.textContent = result.recommendation || "Avoid entering passwords, OTPs, or payment details.";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "innovex-dismiss-warning";
+    button.textContent = "Continue carefully";
+    button.addEventListener("click", removeWarning);
+
+    card.append(title, text, recommendation, button);
+    banner.appendChild(card);
     document.documentElement.appendChild(banner);
-    document.getElementById("innovex-dismiss-warning")?.addEventListener("click", removeWarning);
   }
 
   chrome.runtime.onMessage.addListener((message) => {
