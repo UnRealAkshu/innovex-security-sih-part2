@@ -12,7 +12,7 @@
     const passwordFields = document.querySelectorAll('input[type="password"]').length;
     const emailFields = document.querySelectorAll('input[type="email"]').length;
     const sensitiveFields = document.querySelectorAll('input[name*="card" i], input[name*="cvv" i], input[name*="otp" i], input[name*="pin" i], input[name*="password" i]').length;
-    const authWords = ["login", "log in", "sign in", "signin", "sign up", "register", "verify", "account", "password"];
+    const authWords = ["login", "log in", "sign in", "signin", "sign up", "register", "verify", "verification", "account", "password"];
     const matchedAuthWords = authWords.filter((word) => text.includes(word));
 
     const externalFormTargets = forms
@@ -27,6 +27,10 @@
         }
       }).length;
 
+    const knownSecurityTestPage =
+      location.hostname === "www.amtso.org" &&
+      /check[-_]desktop[-_]phishing[-_]page|feature-settings-check-phishing-page/i.test(location.pathname);
+
     return {
       passwordFields,
       emailFields,
@@ -35,7 +39,8 @@
       externalFormTargets,
       matchedAuthWords: matchedAuthWords.slice(0, 6),
       hasPaymentLanguage: /(payment|credit card|debit card|billing|cvv|upi)/i.test(text),
-      hasUrgencyLanguage: /(urgent|immediately|act now|suspended|expires today|verify now)/i.test(text)
+      hasUrgencyLanguage: /(urgent|immediately|act now|suspended|expires today|verify now)/i.test(text),
+      knownSecurityTestPage
     };
   }
 
