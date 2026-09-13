@@ -1,24 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Innovex Security",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Real-time phishing and malicious-link protection powered by Innovex Security.",
   "permissions": ["storage", "tabs", "activeTab"],
   "host_permissions": ["<all_urls>"],
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-  "action": {
-    "default_title": "Scan with Innovex Security",
-    "default_popup": "popup/popup.html"
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["styles/warning.css"],
-      "run_at": "document_start"
-    }
-  ]
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "Scan with Innovex Security", "default_popup": "popup/popup.html"},
+  "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"], "css": ["styles/warning.css"], "run_at": "document_start"}]
 }
