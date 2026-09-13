@@ -1,6 +1,7 @@
 import { API_ENDPOINTS, EXTENSION_API_KEY } from "./config.js";
 
 const cache = new Map();
+const tabSignals = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 function unsupportedResult(url) {
@@ -16,7 +17,60 @@ function unsupportedResult(url) {
   };
 }
 
-function localAnalyze(url) {
+function applyPageSignals(result, signals) {
+  if (!signals || !result || result.riskScore == null) return result;
+
+  let score = Number(result.riskScore) || 0;
+  const indicators = Array.isArray(result.indicators) ? [...result.indicators] : [];
+  const passwordFields = Number(signals.passwordFields) || 0;
+  const emailFields = Number(signals.emailFields) || 0;
+  const sensitiveFields = Number(signals.sensitiveFields) || 0;
+  const externalFormTargets = Number(signals.externalFormTargets) || 0;
+  const authWords = Array.isArray(signals.matchedAuthWords) ? signals.matchedAuthWords : [];
+
+  if (passwordFields > 0) {
+    score += 10;
+    indicators.push("The page contains a password input field.");
+  }
+
+  if (passwordFields > 0 && (emailFields > 0 || authWords.length > 0)) {
+    score += 5;
+    indicators.push("The page appears to collect login/account credentials.");
+  }
+
+  if (sensitiveFields > 0) {
+    score += 10;
+    indicators.push("The page contains a field associated with sensitive information.");
+  }
+
+  if (externalFormTargets > 0) {
+    score += 25;
+    indicators.push("A form submits data to an external origin.");
+  }
+
+  if (signals.hasPaymentLanguage && sensitiveFields > 0) {
+    score += 10;
+    indicators.push("Payment or billing language appears near sensitive input fields.");
+  }
+
+  if (signals.hasUrgencyLanguage && (passwordFields > 0 || sensitiveFields > 0)) {
+    score += 10;
+    indicators.push("Urgency language appears on a page requesting sensitive information.");
+  }
+
+  score = Math.min(100, Math.max(0, score));
+  const severity = score >= 80 ? "Critical" : score >= 60 ? "High" : score >= 30 ? "Medium" : "Low";
+
+  return {
+    ...result,
+    riskScore: score,
+    severity,
+    threatDetected: Boolean(result.threatDetected) || score >= 30,
+    indicators: [...new Set(indicators)]
+  };
+}
+
+function localAnalyze(url, signals = null) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -86,30 +140,36 @@ function localAnalyze(url) {
     indicators.push("The URL contains many query parameters.");
   }
 
-  riskScore = Math.min(100, Math.max(0, riskScore));
-  const severity = riskScore >= 80 ? "Critical" : riskScore >= 60 ? "High" : riskScore >= 30 ? "Medium" : "Low";
-  const recommendation = severity === "Critical"
-    ? "Do not open this URL. Avoid entering credentials or sensitive information."
-    : severity === "High"
-      ? "Avoid opening this URL until it has been independently verified."
-      : severity === "Medium"
-        ? "Use caution and verify the source independently before continuing."
-        : "The URL appears relatively low risk based on local heuristic checks.";
-
-  return {
+  const base = {
     success: true,
     mode: "local-fallback",
     url: normalizedUrl,
-    riskScore,
-    severity,
-    confidence: Math.min(95, Math.max(70, 100 - Math.abs(50 - riskScore))),
-    threatDetected: riskScore >= 30,
+    riskScore: Math.min(100, Math.max(0, riskScore)),
+    severity: "Low",
+    confidence: 80,
+    threatDetected: false,
     domain: hostname,
     protocol,
-    analysisType: "Local heuristic fallback",
-    indicators: indicators.length ? indicators : ["No suspicious URL indicators detected by local checks."],
-    recommendation
+    analysisType: "Local heuristic + page signal fallback",
+    indicators,
+    recommendation: "The page appears relatively low risk based on available local checks."
   };
+
+  const combined = applyPageSignals(base, signals);
+  combined.confidence = Math.min(95, Math.max(70, 100 - Math.abs(50 - combined.riskScore)));
+  combined.threatDetected = combined.riskScore >= 30;
+  combined.indicators = combined.indicators.length
+    ? combined.indicators
+    : ["No suspicious URL or page-level indicators detected by local checks."];
+  combined.recommendation = combined.severity === "Critical"
+    ? "Do not open this URL. Avoid entering credentials or sensitive information."
+    : combined.severity === "High"
+      ? "Avoid opening this URL until it has been independently verified."
+      : combined.severity === "Medium"
+        ? "Use caution and verify the page and source independently before entering sensitive information."
+        : "The page appears relatively low risk based on available local checks.";
+
+  return combined;
 }
 
 function unknownResult(url, message = "Unable to contact Innovex Security server") {
@@ -125,11 +185,10 @@ function unknownResult(url, message = "Unable to contact Innovex Security server
   };
 }
 
-function normalizeResult(url, result) {
+function normalizeResult(url, result, signals = null) {
   const severity = result?.severity || "Unknown";
   const riskScore = Number.isFinite(result?.riskScore) ? result.riskScore : null;
-
-  return {
+  const normalized = {
     ...result,
     url: result?.url || url,
     riskScore,
@@ -137,15 +196,16 @@ function normalizeResult(url, result) {
     indicators: Array.isArray(result?.indicators) ? result.indicators : [],
     recommendation: result?.recommendation || "Review this URL carefully before continuing."
   };
+
+  return applyPageSignals(normalized, signals);
 }
 
-async function scanUrl(url, force = false) {
+async function scanUrl(url, force = false, signals = null) {
   if (!url || !/^https?:\/\//i.test(url)) return unsupportedResult(url);
 
-  const cached = cache.get(url);
-  if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-    return cached.result;
-  }
+  const cacheKey = `${url}|${JSON.stringify(signals || {})}`;
+  const cached = cache.get(cacheKey);
+  if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
 
   try {
     const headers = { "Content-Type": "application/json" };
@@ -154,22 +214,20 @@ async function scanUrl(url, force = false) {
     const response = await fetch(API_ENDPOINTS.scanUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, pageSignals: signals }),
       cache: "no-store"
     });
 
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data?.success === false) {
-      throw new Error(data?.error || `API returned ${response.status}`);
-    }
+    if (!response.ok || data?.success === false) throw new Error(data?.error || `API returned ${response.status}`);
 
-    const result = normalizeResult(url, data);
-    cache.set(url, { timestamp: Date.now(), result });
+    const result = normalizeResult(url, data, signals);
+    cache.set(cacheKey, { timestamp: Date.now(), result });
     return result;
   } catch (error) {
     console.warn("Innovex API scan failed; using local fallback:", error);
-    const fallback = localAnalyze(url);
-    cache.set(url, { timestamp: Date.now(), result: fallback });
+    const fallback = localAnalyze(url, signals);
+    cache.set(cacheKey, { timestamp: Date.now(), result: fallback });
     return fallback;
   }
 }
@@ -180,17 +238,31 @@ async function notifyTab(tabId, result) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "PAGE_SIGNALS") {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      tabSignals.set(tabId, { url: message.url, signals: message.signals });
+      scanUrl(message.url, true, message.signals).then((result) => notifyTab(tabId, result));
+    }
+    return;
+  }
+
   if (message?.type === "SCAN_URL") {
-    scanUrl(message.url, Boolean(message.force)).then(sendResponse);
+    const tabId = sender.tab?.id;
+    const stored = tabId ? tabSignals.get(tabId) : null;
+    scanUrl(message.url, Boolean(message.force), stored?.url === message.url ? stored.signals : null).then(sendResponse);
     return true;
   }
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "loading" || !tab?.url || !/^https?:\/\//i.test(tab.url)) return;
+  tabSignals.delete(tabId);
 
   scanUrl(tab.url).then(async (result) => {
     await notifyTab(tabId, result);
     setTimeout(() => notifyTab(tabId, result), 700);
   });
 });
+
+chrome.tabs.onRemoved.addListener((tabId) => tabSignals.delete(tabId));
