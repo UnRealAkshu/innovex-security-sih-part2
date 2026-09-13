@@ -4,6 +4,14 @@ const cache = new Map();
 const tabSignals = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
+function severityFromScore(score) {
+  if (!Number.isFinite(score)) return "Unknown";
+  if (score >= 75) return "Critical";
+  if (score >= 50) return "High";
+  if (score >= 25) return "Medium";
+  return "Low";
+}
+
 function unsupportedResult(url) {
   return { success: true, url, riskScore: 0, severity: "Low", confidence: 100, threatDetected: false, indicators: ["Browser-internal or unsupported URL"], recommendation: "No scan required for this page.", engineVersion: "2.0.0" };
 }
@@ -61,17 +69,18 @@ function applyPageSignals(result, signals) {
   if (signals.hasPaymentLanguage && sensitiveFields > 0) { score += 15; indicators.push("Payment or billing language appears near sensitive input fields."); }
   if (signals.hasUrgencyLanguage && (passwordFields > 0 || sensitiveFields > 0)) { score += 15; indicators.push("Urgency language appears on a page requesting sensitive information."); }
 
-  score = Math.min(100, score);
-  return { ...result, riskScore: score, severity: score >= 80 ? "Critical" : score >= 60 ? "High" : score >= 30 ? "Medium" : "Low", threatDetected: Boolean(result.threatDetected) || score >= 30, indicators: [...new Set(indicators)] };
+  score = Math.min(100, Math.max(0, score));
+  return { ...result, riskScore: score, severity: severityFromScore(score), threatDetected: Boolean(result.threatDetected) || score >= 50, indicators: [...new Set(indicators)] };
 }
 
 function localAnalyze(url, signals = null) {
   const base = localUrlScore(url);
-  const result = { success: true, mode: "local-baseline", url, riskScore: base.score, severity: "Low", confidence: 90, threatDetected: base.score >= 30, indicators: [...base.indicators], recommendation: "The page appears relatively low risk based on available local checks.", engineVersion: "2.0.0" };
+  const result = { success: true, mode: "local-baseline", url, riskScore: base.score, severity: severityFromScore(base.score), confidence: 90, threatDetected: base.score >= 50, indicators: [...base.indicators], recommendation: "The page appears relatively low risk based on available local checks.", engineVersion: "2.0.0" };
   const combined = applyPageSignals(result, signals);
   combined.confidence = Math.min(99, Math.max(70, 100 - Math.abs(50 - combined.riskScore)));
-  combined.threatDetected = combined.riskScore >= 30;
-  combined.recommendation = combined.severity === "Critical" ? "Do not open this URL. Avoid entering credentials or sensitive information." : combined.severity === "High" ? "Avoid opening this URL until it has been independently verified. Do not enter passwords or payment information." : combined.severity === "Medium" ? "Use caution and verify the page and source independently before entering sensitive information." : "The page appears relatively low risk based on available local checks.";
+  combined.threatDetected = combined.riskScore >= 50;
+  combined.severity = severityFromScore(combined.riskScore);
+  combined.recommendation = combined.knownSecurityTestPage || signals?.knownSecurityTestPage ? "Safe phishing-simulation page detected. This result confirms the Innovex warning pipeline is working." : combined.severity === "Critical" ? "Do not open this URL. Avoid entering credentials or sensitive information." : combined.severity === "High" ? "Avoid opening this URL until it has been independently verified. Do not enter passwords or payment information." : combined.severity === "Medium" ? "Use caution and verify the page and source independently before entering sensitive information." : "The page appears relatively low risk based on available local checks.";
   return combined;
 }
 
@@ -94,8 +103,10 @@ async function scanUrl(url, force = false, signals = null) {
     let result = { ...data, url: data?.url || url, engineVersion: "2.0.0" };
     result = applyPageSignals(result, signals);
     if (local.riskScore > (Number(result.riskScore) || 0)) {
-      result = { ...result, riskScore: local.riskScore, severity: local.severity, threatDetected: local.threatDetected, indicators: [...new Set([...(result.indicators || []), ...local.indicators])] };
+      result = { ...result, riskScore: local.riskScore, severity: severityFromScore(local.riskScore), threatDetected: local.threatDetected, indicators: [...new Set([...(result.indicators || []), ...local.indicators])] };
     }
+    result.severity = severityFromScore(Number(result.riskScore));
+    result.threatDetected = Number(result.riskScore) >= 50;
     cache.set(cacheKey, { timestamp: Date.now(), result });
     return result;
   } catch (error) {
