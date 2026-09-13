@@ -16,6 +16,102 @@ function unsupportedResult(url) {
   };
 }
 
+function localAnalyze(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return unknownResult(url, "Invalid URL");
+  }
+
+  const protocol = parsed.protocol.replace(":", "").toLowerCase();
+  const hostname = parsed.hostname.toLowerCase();
+  const normalizedUrl = parsed.toString();
+  const indicators = [];
+  let riskScore = 0;
+
+  if (protocol !== "https") {
+    riskScore += 20;
+    indicators.push("The URL does not use HTTPS.");
+  }
+
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")) {
+    riskScore += 25;
+    indicators.push("The URL uses an IP address instead of a normal domain name.");
+  }
+
+  if (hostname.includes("xn--")) {
+    riskScore += 20;
+    indicators.push("The domain uses punycode, which can be used in lookalike-domain attacks.");
+  }
+
+  if (hostname.split(".").filter(Boolean).length >= 4) {
+    riskScore += 10;
+    indicators.push("The URL contains an unusually large number of subdomains.");
+  }
+
+  const suspiciousKeywords = [
+    "login", "verify", "verification", "account", "secure", "security",
+    "update", "password", "signin", "sign-in", "confirm", "bank", "wallet",
+    "payment", "invoice", "unlock", "suspended", "urgent"
+  ];
+  const lower = normalizedUrl.toLowerCase();
+  const matches = suspiciousKeywords.filter((keyword) => lower.includes(keyword));
+
+  if (matches.length >= 3) {
+    riskScore += 20;
+    indicators.push(`Multiple security-sensitive terms detected: ${matches.slice(0, 6).join(", ")}.`);
+  } else if (matches.length) {
+    riskScore += 5;
+    indicators.push(`Security-sensitive term detected: ${matches.slice(0, 4).join(", ")}.`);
+  }
+
+  if (normalizedUrl.length > 180) {
+    riskScore += 10;
+    indicators.push("The URL is unusually long.");
+  }
+
+  if (normalizedUrl.includes("@")) {
+    riskScore += 20;
+    indicators.push("The URL contains an @ symbol or embedded credential-like information.");
+  }
+
+  if (parsed.port && !["80", "443"].includes(parsed.port)) {
+    riskScore += 15;
+    indicators.push("The URL uses a non-standard network port.");
+  }
+
+  if ([...parsed.searchParams.keys()].length >= 5) {
+    riskScore += 10;
+    indicators.push("The URL contains many query parameters.");
+  }
+
+  riskScore = Math.min(100, Math.max(0, riskScore));
+  const severity = riskScore >= 80 ? "Critical" : riskScore >= 60 ? "High" : riskScore >= 30 ? "Medium" : "Low";
+  const recommendation = severity === "Critical"
+    ? "Do not open this URL. Avoid entering credentials or sensitive information."
+    : severity === "High"
+      ? "Avoid opening this URL until it has been independently verified."
+      : severity === "Medium"
+        ? "Use caution and verify the source independently before continuing."
+        : "The URL appears relatively low risk based on local heuristic checks.";
+
+  return {
+    success: true,
+    mode: "local-fallback",
+    url: normalizedUrl,
+    riskScore,
+    severity,
+    confidence: Math.min(95, Math.max(70, 100 - Math.abs(50 - riskScore))),
+    threatDetected: riskScore >= 30,
+    domain: hostname,
+    protocol,
+    analysisType: "Local heuristic fallback",
+    indicators: indicators.length ? indicators : ["No suspicious URL indicators detected by local checks."],
+    recommendation
+  };
+}
+
 function unknownResult(url, message = "Unable to contact Innovex Security server") {
   return {
     success: false,
@@ -71,8 +167,10 @@ async function scanUrl(url, force = false) {
     cache.set(url, { timestamp: Date.now(), result });
     return result;
   } catch (error) {
-    console.warn("Innovex extension scan failed:", error);
-    return unknownResult(url, error?.message || "Unable to contact Innovex Security server");
+    console.warn("Innovex API scan failed; using local fallback:", error);
+    const fallback = localAnalyze(url);
+    cache.set(url, { timestamp: Date.now(), result: fallback });
+    return fallback;
   }
 }
 
@@ -92,7 +190,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "loading" || !tab?.url || !/^https?:\/\//i.test(tab.url)) return;
 
   scanUrl(tab.url).then(async (result) => {
-    // The content script can race the first navigation event, so notify now and once again shortly after.
     await notifyTab(tabId, result);
     setTimeout(() => notifyTab(tabId, result), 700);
   });
