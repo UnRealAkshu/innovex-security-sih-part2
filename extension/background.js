@@ -5,7 +5,41 @@ const tabSignals = new Map();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 function unsupportedResult(url) {
-  return { success: true, url, riskScore: 0, severity: "Low", confidence: 100, threatDetected: false, indicators: ["Browser-internal or unsupported URL"], recommendation: "No scan required for this page." };
+  return { success: true, url, riskScore: 0, severity: "Low", confidence: 100, threatDetected: false, indicators: ["Browser-internal or unsupported URL"], recommendation: "No scan required for this page.", engineVersion: "2.0.0" };
+}
+
+function localUrlScore(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch { return { score: 0, indicators: [] }; }
+  const lower = parsed.toString().toLowerCase();
+  const indicators = [];
+  let score = 0;
+
+  if (parsed.protocol !== "https:") { score += 20; indicators.push("The URL does not use HTTPS."); }
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(parsed.hostname) || parsed.hostname.includes(":")) { score += 25; indicators.push("The URL uses an IP address instead of a normal domain name."); }
+  if (parsed.hostname.includes("xn--")) { score += 20; indicators.push("The domain uses punycode, which can be used in lookalike-domain attacks."); }
+  if (parsed.hostname.split(".").filter(Boolean).length >= 4) { score += 10; indicators.push("The URL contains an unusually large number of subdomains."); }
+
+  const keywords = ["login", "verify", "verification", "account", "secure", "security", "update", "password", "signin", "sign-in", "confirm", "bank", "wallet", "payment", "invoice", "unlock", "suspended", "urgent"];
+  const matches = [...new Set(keywords.filter((k) => lower.includes(k)))];
+  if (matches.length) {
+    const points = matches.length >= 3 ? Math.min(35, 10 + (matches.length - 3) * 5) : matches.length * 5;
+    score += points;
+    indicators.push(`${matches.length >= 3 ? "Multiple" : "Security-sensitive"} terms detected: ${matches.slice(0, 8).join(", ")}.`);
+  }
+
+  const path = `${parsed.pathname} ${parsed.search}`.toLowerCase();
+  const credentialTokens = ["login", "signin", "sign-in", "verify", "verification", "password", "account", "confirm", "secure"];
+  const pathMatches = credentialTokens.filter((k) => path.includes(k));
+  if (pathMatches.length >= 4) { score += 20; indicators.push("The URL path contains multiple credential or account-action terms."); }
+  if (/login.*(verify|verification|password)|signin.*(verify|password)/i.test(path)) { score += 10; indicators.push("Authentication and verification steps appear together in the URL path."); }
+
+  if (lower.length > 180) { score += 10; indicators.push("The URL is unusually long."); }
+  if (lower.includes("@")) { score += 20; indicators.push("The URL contains an @ symbol or embedded credential-like information."); }
+  if (parsed.port && !["80", "443"].includes(parsed.port)) { score += 15; indicators.push("The URL uses a non-standard network port."); }
+  if ([...parsed.searchParams.keys()].length >= 5) { score += 10; indicators.push("The URL contains many query parameters."); }
+
+  return { score: Math.min(100, score), indicators };
 }
 
 function applyPageSignals(result, signals) {
@@ -27,91 +61,51 @@ function applyPageSignals(result, signals) {
   if (signals.hasPaymentLanguage && sensitiveFields > 0) { score += 15; indicators.push("Payment or billing language appears near sensitive input fields."); }
   if (signals.hasUrgencyLanguage && (passwordFields > 0 || sensitiveFields > 0)) { score += 15; indicators.push("Urgency language appears on a page requesting sensitive information."); }
 
-  score = Math.min(100, Math.max(0, score));
-  const severity = score >= 80 ? "Critical" : score >= 60 ? "High" : score >= 30 ? "Medium" : "Low";
-  return { ...result, riskScore: score, severity, threatDetected: Boolean(result.threatDetected) || score >= 30, indicators: [...new Set(indicators)] };
+  score = Math.min(100, score);
+  return { ...result, riskScore: score, severity: score >= 80 ? "Critical" : score >= 60 ? "High" : score >= 30 ? "Medium" : "Low", threatDetected: Boolean(result.threatDetected) || score >= 30, indicators: [...new Set(indicators)] };
 }
 
 function localAnalyze(url, signals = null) {
-  let parsed;
-  try { parsed = new URL(url); } catch { return unknownResult(url, "Invalid URL"); }
-  const protocol = parsed.protocol.replace(":", "").toLowerCase();
-  const hostname = parsed.hostname.toLowerCase();
-  const normalizedUrl = parsed.toString();
-  const indicators = [];
-  let riskScore = 0;
-
-  if (protocol !== "https") { riskScore += 20; indicators.push("The URL does not use HTTPS."); }
-  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")) { riskScore += 25; indicators.push("The URL uses an IP address instead of a normal domain name."); }
-  if (hostname.includes("xn--")) { riskScore += 20; indicators.push("The domain uses punycode, which can be used in lookalike-domain attacks."); }
-  if (hostname.split(".").filter(Boolean).length >= 4) { riskScore += 10; indicators.push("The URL contains an unusually large number of subdomains."); }
-
-  const suspiciousKeywords = ["login", "verify", "verification", "account", "secure", "security", "update", "password", "signin", "sign-in", "confirm", "bank", "wallet", "payment", "invoice", "unlock", "suspended", "urgent"];
-  const lower = normalizedUrl.toLowerCase();
-  const matches = suspiciousKeywords.filter((keyword) => lower.includes(keyword));
-  if (matches.length >= 3) {
-    const keywordPoints = Math.min(35, 10 + (matches.length - 3) * 5);
-    riskScore += keywordPoints;
-    indicators.push(`Multiple security-sensitive terms detected (${matches.length}): ${matches.slice(0, 8).join(", ")}.`);
-  } else if (matches.length) {
-    riskScore += matches.length * 5;
-    indicators.push(`Security-sensitive term detected: ${matches.slice(0, 4).join(", ")}.`);
-  }
-
-  const path = `${parsed.pathname} ${parsed.search}`.toLowerCase();
-  const credentialPathMatches = ["login", "signin", "sign-in", "verify", "verification", "password", "account", "confirm", "secure"].filter((keyword) => path.includes(keyword));
-  if (credentialPathMatches.length >= 4) {
-    riskScore += 20;
-    indicators.push("The URL path contains multiple credential or account-action terms.");
-  }
-
-  if (normalizedUrl.length > 180) { riskScore += 10; indicators.push("The URL is unusually long."); }
-  if (normalizedUrl.includes("@")) { riskScore += 20; indicators.push("The URL contains an @ symbol or embedded credential-like information."); }
-  if (parsed.port && !["80", "443"].includes(parsed.port)) { riskScore += 15; indicators.push("The URL uses a non-standard network port."); }
-  if ([...parsed.searchParams.keys()].length >= 5) { riskScore += 10; indicators.push("The URL contains many query parameters."); }
-
-  const base = { success: true, mode: "local-fallback", url: normalizedUrl, riskScore: Math.min(100, Math.max(0, riskScore)), severity: "Low", confidence: 80, threatDetected: false, domain: hostname, protocol, analysisType: "Local heuristic + page signal fallback", indicators, recommendation: "The page appears relatively low risk based on available local checks." };
-  const combined = applyPageSignals(base, signals);
-  combined.confidence = Math.min(95, Math.max(70, 100 - Math.abs(50 - combined.riskScore)));
+  const base = localUrlScore(url);
+  const result = { success: true, mode: "local-baseline", url, riskScore: base.score, severity: "Low", confidence: 90, threatDetected: base.score >= 30, indicators: [...base.indicators], recommendation: "The page appears relatively low risk based on available local checks.", engineVersion: "2.0.0" };
+  const combined = applyPageSignals(result, signals);
+  combined.confidence = Math.min(99, Math.max(70, 100 - Math.abs(50 - combined.riskScore)));
   combined.threatDetected = combined.riskScore >= 30;
-  combined.severity = combined.riskScore >= 80 ? "Critical" : combined.riskScore >= 60 ? "High" : combined.riskScore >= 30 ? "Medium" : "Low";
-  combined.indicators = combined.indicators.length ? combined.indicators : ["No suspicious URL or page-level indicators detected by local checks."];
-  combined.recommendation = combined.knownSecurityTestPage || signals?.knownSecurityTestPage ? "Safe phishing-simulation page detected. This result confirms the Innovex warning pipeline is working." : combined.severity === "Critical" ? "Do not open this URL. Avoid entering credentials or sensitive information." : combined.severity === "High" ? "Avoid opening this URL until it has been independently verified." : combined.severity === "Medium" ? "Use caution and verify the page and source independently before entering sensitive information." : "The page appears relatively low risk based on available local checks.";
+  combined.recommendation = combined.severity === "Critical" ? "Do not open this URL. Avoid entering credentials or sensitive information." : combined.severity === "High" ? "Avoid opening this URL until it has been independently verified. Do not enter passwords or payment information." : combined.severity === "Medium" ? "Use caution and verify the page and source independently before entering sensitive information." : "The page appears relatively low risk based on available local checks.";
   return combined;
 }
 
-function unknownResult(url, message = "Unable to contact Innovex Security server") {
-  return { success: false, url, riskScore: null, severity: "Unknown", confidence: null, threatDetected: false, indicators: [message], recommendation: "Do not enter sensitive information until the URL can be verified." };
-}
-
-function normalizeResult(url, result, signals = null) {
-  const normalized = { ...result, url: result?.url || url, riskScore: Number.isFinite(result?.riskScore) ? result.riskScore : null, severity: result?.severity || "Unknown", indicators: Array.isArray(result?.indicators) ? result.indicators : [], recommendation: result?.recommendation || "Review this URL carefully before continuing." };
-  return applyPageSignals(normalized, signals);
-}
+function unknownResult(url, message) { return { success: false, url, riskScore: null, severity: "Unknown", confidence: null, threatDetected: false, indicators: [message || "Unable to contact Innovex Security server"], recommendation: "Do not enter sensitive information until the URL can be verified.", engineVersion: "2.0.0" }; }
 
 async function scanUrl(url, force = false, signals = null) {
   if (!url || !/^https?:\/\//i.test(url)) return unsupportedResult(url);
   const cacheKey = `${url}|${JSON.stringify(signals || {})}`;
   const cached = cache.get(cacheKey);
   if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.result;
+
+  const local = localAnalyze(url, signals);
   try {
     const headers = { "Content-Type": "application/json" };
     if (EXTENSION_API_KEY) headers["X-Innovex-Extension-Key"] = EXTENSION_API_KEY;
     const response = await fetch(API_ENDPOINTS.scanUrl, { method: "POST", headers, body: JSON.stringify({ url, pageSignals: signals }), cache: "no-store" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data?.success === false) throw new Error(data?.error || `API returned ${response.status}`);
-    const result = normalizeResult(url, data, signals);
+
+    let result = { ...data, url: data?.url || url, engineVersion: "2.0.0" };
+    result = applyPageSignals(result, signals);
+    if (local.riskScore > (Number(result.riskScore) || 0)) {
+      result = { ...result, riskScore: local.riskScore, severity: local.severity, threatDetected: local.threatDetected, indicators: [...new Set([...(result.indicators || []), ...local.indicators])] };
+    }
     cache.set(cacheKey, { timestamp: Date.now(), result });
     return result;
   } catch (error) {
-    console.warn("Innovex API scan failed; using local fallback:", error);
-    const fallback = localAnalyze(url, signals);
-    cache.set(cacheKey, { timestamp: Date.now(), result: fallback });
-    return fallback;
+    console.warn("Innovex API scan failed; using local baseline:", error);
+    cache.set(cacheKey, { timestamp: Date.now(), result: local });
+    return local;
   }
 }
 
-async function notifyTab(tabId, result) { if (!tabId || !result) return; await chrome.tabs.sendMessage(tabId, { type: "SCAN_RESULT", result }).catch(() => {}); }
+async function notifyTab(tabId, result) { if (tabId && result) await chrome.tabs.sendMessage(tabId, { type: "SCAN_RESULT", result }).catch(() => {}); }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "PAGE_SIGNALS") {
@@ -132,5 +126,4 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   tabSignals.delete(tabId);
   scanUrl(tab.url).then(async (result) => { await notifyTab(tabId, result); setTimeout(() => notifyTab(tabId, result), 700); });
 });
-
 chrome.tabs.onRemoved.addListener((tabId) => tabSignals.delete(tabId));
