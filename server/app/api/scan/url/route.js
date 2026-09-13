@@ -6,14 +6,12 @@ export const dynamic = "force-dynamic";
 const ALLOWED_ORIGIN = process.env.EXTENSION_ALLOWED_ORIGIN || "*";
 const EXTENSION_API_KEY = process.env.EXTENSION_API_KEY || "";
 
-function corsHeaders() {
-  return { "Access-Control-Allow-Origin": ALLOWED_ORIGIN, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Innovex-Extension-Key", "Access-Control-Max-Age": "86400", "Cache-Control": "no-store" };
-}
+function corsHeaders() { return { "Access-Control-Allow-Origin": ALLOWED_ORIGIN, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, X-Innovex-Extension-Key", "Access-Control-Max-Age": "86400", "Cache-Control": "no-store" }; }
 export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: corsHeaders() }); }
 function json(data, status = 200) { return NextResponse.json(data, { status, headers: corsHeaders() }); }
 export async function GET() { return json({ success: true, service: "Innovex Security Extension Scan API", status: "ok", engineVersion: "2.0.0", timestamp: new Date().toISOString(), urlhausConfigured: Boolean(process.env.URLHAUS_AUTH_KEY) }); }
 
-function getSeverity(score) { if (score >= 80) return "Critical"; if (score >= 60) return "High"; if (score >= 30) return "Medium"; return "Low"; }
+function getSeverity(score) { if (!Number.isFinite(score)) return "Unknown"; if (score >= 75) return "Critical"; if (score >= 50) return "High"; if (score >= 25) return "Medium"; return "Low"; }
 
 async function checkURLhaus(url) {
   const authKey = process.env.URLHAUS_AUTH_KEY;
@@ -50,18 +48,13 @@ function analyzeUrl(rawUrl) {
   const suspiciousKeywords = ["login", "verify", "verification", "account", "secure", "security", "update", "password", "signin", "sign-in", "confirm", "bank", "wallet", "payment", "invoice", "unlock", "suspended", "urgent"];
   const lower = normalizedUrl.toLowerCase();
   const matches = [...new Set(suspiciousKeywords.filter((keyword) => lower.includes(keyword)))];
-  if (matches.length) {
-    const keywordScore = matches.length >= 3 ? Math.min(35, 10 + (matches.length - 3) * 5) : matches.length * 5;
-    riskScore += keywordScore;
-    indicators.push(`${matches.length >= 3 ? "Multiple" : "Security-sensitive"} terms detected: ${matches.slice(0, 8).join(", ")}.`);
-  }
+  if (matches.length) { const keywordScore = matches.length >= 3 ? Math.min(35, 10 + (matches.length - 3) * 5) : matches.length * 5; riskScore += keywordScore; indicators.push(`${matches.length >= 3 ? "Multiple" : "Security-sensitive"} terms detected: ${matches.slice(0, 8).join(", ")}.`); }
 
   const path = `${parsed.pathname} ${parsed.search}`.toLowerCase();
   const credentialTokens = ["login", "signin", "sign-in", "verify", "verification", "password", "account", "confirm", "secure"];
   const pathMatches = credentialTokens.filter((keyword) => path.includes(keyword));
   if (pathMatches.length >= 4) { riskScore += 20; indicators.push("The URL path contains multiple credential or account-action terms."); }
   if (/login.*(verify|verification|password)|signin.*(verify|password)/i.test(path)) { riskScore += 10; indicators.push("Authentication and verification steps appear together in the URL path."); }
-
   if (normalizedUrl.length > 180) { riskScore += 10; indicators.push("The URL is unusually long."); }
   if (normalizedUrl.includes("@")) { riskScore += 20; indicators.push("The URL contains an @ symbol or embedded credential-like information."); }
   if (parsed.port && !["80", "443"].includes(parsed.port)) { riskScore += 15; indicators.push("The URL uses a non-standard network port."); }
@@ -75,7 +68,6 @@ function applyPageSignals(baseScore, baseIndicators, signals) {
   const indicators = [...baseIndicators];
   if (!signals || typeof signals !== "object") return { riskScore, indicators };
   if (signals.knownSecurityTestPage) { riskScore = 100; indicators.push("Known safe AMTSO phishing-simulation test page detected."); indicators.push("This page is a security test, not a real malicious website."); }
-
   const passwordFields = Number(signals.passwordFields) || 0;
   const emailFields = Number(signals.emailFields) || 0;
   const sensitiveFields = Number(signals.sensitiveFields) || 0;
@@ -99,7 +91,6 @@ export async function POST(request) {
     const pageSignals = body?.pageSignals && typeof body.pageSignals === "object" ? body.pageSignals : null;
     if (!rawUrl) return json({ success: false, error: "Please provide a URL." }, 400);
     if (rawUrl.length > 2048) return json({ success: false, error: "URL is too long." }, 400);
-
     const analysis = analyzeUrl(rawUrl);
     if (analysis.error) return json({ success: false, error: analysis.error }, 400);
     const threatIntelligence = await checkURLhaus(analysis.normalizedUrl);
@@ -109,7 +100,7 @@ export async function POST(request) {
     if (threatIntelligence.found) { riskScore = 100; indicators.push("URLhaus identified this URL as a known malicious URL."); if (threatIntelligence.threat) indicators.push(`URLhaus threat classification: ${threatIntelligence.threat}.`); if (threatIntelligence.urlStatus) indicators.push(`URLhaus status: ${threatIntelligence.urlStatus}.`); }
     riskScore = Math.min(100, Math.max(0, riskScore));
     const severity = getSeverity(riskScore);
-    const threatDetected = riskScore >= 30 || threatIntelligence.found;
+    const threatDetected = riskScore >= 50 || threatIntelligence.found;
     const confidence = threatIntelligence.found ? 99 : Math.min(99, Math.max(70, 100 - Math.abs(50 - riskScore)));
     let recommendation = "The page appears relatively low risk based on the available checks. Still verify the source before entering sensitive information.";
     if (severity === "Medium") recommendation = "Use caution. Review the page and verify the source independently before entering sensitive information.";
@@ -117,8 +108,5 @@ export async function POST(request) {
     if (severity === "Critical") recommendation = "Do not use this page. Treat it as potentially dangerous and avoid entering credentials or sensitive information.";
     if (threatIntelligence.found) recommendation = "Do not open this URL. URLhaus identified it as a known malicious URL. Avoid entering credentials, payment information or other sensitive data.";
     return json({ success: true, engineVersion: "2.0.0", url: analysis.normalizedUrl, riskScore, severity, confidence, threatDetected, domain: analysis.hostname, protocol: analysis.protocol, analysisType: threatIntelligence.checked ? "URL heuristic + page signals + URLhaus threat intelligence" : "URL heuristic + page signals", indicators: [...new Set(indicators)], recommendation, threatIntelligence, pageSignals });
-  } catch (error) {
-    console.error("Extension URL scan error:", error);
-    return json({ success: false, error: "Something went wrong while analyzing the URL." }, 500);
-  }
+  } catch (error) { console.error("Extension URL scan error:", error); return json({ success: false, error: "Something went wrong while analyzing the URL." }, 500); }
 }
