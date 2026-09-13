@@ -11,7 +11,7 @@ function corsHeaders() {
 }
 export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: corsHeaders() }); }
 function json(data, status = 200) { return NextResponse.json(data, { status, headers: corsHeaders() }); }
-export async function GET() { return json({ success: true, service: "Innovex Security Extension Scan API", status: "ok", timestamp: new Date().toISOString(), urlhausConfigured: Boolean(process.env.URLHAUS_AUTH_KEY) }); }
+export async function GET() { return json({ success: true, service: "Innovex Security Extension Scan API", status: "ok", engineVersion: "2.0.0", timestamp: new Date().toISOString(), urlhausConfigured: Boolean(process.env.URLHAUS_AUTH_KEY) }); }
 
 function getSeverity(score) { if (score >= 80) return "Critical"; if (score >= 60) return "High"; if (score >= 30) return "Medium"; return "Low"; }
 
@@ -49,18 +49,18 @@ function analyzeUrl(rawUrl) {
 
   const suspiciousKeywords = ["login", "verify", "verification", "account", "secure", "security", "update", "password", "signin", "sign-in", "confirm", "bank", "wallet", "payment", "invoice", "unlock", "suspended", "urgent"];
   const lower = normalizedUrl.toLowerCase();
-  const matches = suspiciousKeywords.filter((keyword) => lower.includes(keyword));
-  if (matches.length >= 3) {
-    riskScore += Math.min(35, 10 + (matches.length - 3) * 5);
-    indicators.push(`Multiple security-sensitive terms detected (${matches.length}): ${matches.slice(0, 8).join(", ")}.`);
-  } else if (matches.length) {
-    riskScore += matches.length * 5;
-    indicators.push(`Security-sensitive term detected: ${matches.slice(0, 4).join(", ")}.`);
+  const matches = [...new Set(suspiciousKeywords.filter((keyword) => lower.includes(keyword)))];
+  if (matches.length) {
+    const keywordScore = matches.length >= 3 ? Math.min(35, 10 + (matches.length - 3) * 5) : matches.length * 5;
+    riskScore += keywordScore;
+    indicators.push(`${matches.length >= 3 ? "Multiple" : "Security-sensitive"} terms detected: ${matches.slice(0, 8).join(", ")}.`);
   }
 
   const path = `${parsed.pathname} ${parsed.search}`.toLowerCase();
-  const credentialPathMatches = ["login", "signin", "sign-in", "verify", "verification", "password", "account", "confirm", "secure"].filter((keyword) => path.includes(keyword));
-  if (credentialPathMatches.length >= 4) { riskScore += 20; indicators.push("The URL path contains multiple credential or account-action terms."); }
+  const credentialTokens = ["login", "signin", "sign-in", "verify", "verification", "password", "account", "confirm", "secure"];
+  const pathMatches = credentialTokens.filter((keyword) => path.includes(keyword));
+  if (pathMatches.length >= 4) { riskScore += 20; indicators.push("The URL path contains multiple credential or account-action terms."); }
+  if (/login.*(verify|verification|password)|signin.*(verify|password)/i.test(path)) { riskScore += 10; indicators.push("Authentication and verification steps appear together in the URL path."); }
 
   if (normalizedUrl.length > 180) { riskScore += 10; indicators.push("The URL is unusually long."); }
   if (normalizedUrl.includes("@")) { riskScore += 20; indicators.push("The URL contains an @ symbol or embedded credential-like information."); }
@@ -116,7 +116,7 @@ export async function POST(request) {
     if (severity === "High") recommendation = "Avoid using this page until it has been independently verified. Do not enter passwords or payment information.";
     if (severity === "Critical") recommendation = "Do not use this page. Treat it as potentially dangerous and avoid entering credentials or sensitive information.";
     if (threatIntelligence.found) recommendation = "Do not open this URL. URLhaus identified it as a known malicious URL. Avoid entering credentials, payment information or other sensitive data.";
-    return json({ success: true, url: analysis.normalizedUrl, riskScore, severity, confidence, threatDetected, domain: analysis.hostname, protocol: analysis.protocol, analysisType: threatIntelligence.checked ? "URL heuristic + page signals + URLhaus threat intelligence" : "URL heuristic + page signals", indicators: [...new Set(indicators)], recommendation, threatIntelligence, pageSignals });
+    return json({ success: true, engineVersion: "2.0.0", url: analysis.normalizedUrl, riskScore, severity, confidence, threatDetected, domain: analysis.hostname, protocol: analysis.protocol, analysisType: threatIntelligence.checked ? "URL heuristic + page signals + URLhaus threat intelligence" : "URL heuristic + page signals", indicators: [...new Set(indicators)], recommendation, threatIntelligence, pageSignals });
   } catch (error) {
     console.error("Extension URL scan error:", error);
     return json({ success: false, error: "Something went wrong while analyzing the URL." }, 500);
