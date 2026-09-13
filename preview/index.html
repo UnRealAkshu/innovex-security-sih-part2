@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Innovex Security — Extension Preview</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:#070b16;color:#edf2ff;font-family:Inter,Arial,sans-serif;display:grid;place-items:center;padding:32px}
+    .wrap{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+    .browser{width:860px;max-width:95vw;border:1px solid #27324b;border-radius:18px;background:#0d1322;overflow:hidden;box-shadow:0 24px 80px #0008}
+    .bar{height:56px;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid #27324b;background:#11182a}
+    .dot{width:10px;height:10px;border-radius:50%;background:#56627c}.addr{flex:1;height:32px;border-radius:8px;background:#080d18;border:1px solid #27324b;color:#8e9ab4;padding:7px 12px;font-size:12px}
+    .page{height:360px;padding:36px;background:linear-gradient(180deg,#11192b,#0d1423)}
+    .page h2{font-size:32px;margin:0 0 8px}.page p{color:#8896b2}.fake-card{width:62%;height:130px;border-radius:14px;border:1px solid #283653;background:#151f33;margin-top:26px;padding:20px;color:#71809c}
+    .popup{width:360px;background:#0b1020;border:1px solid #2a3652;border-radius:16px;box-shadow:0 24px 80px #000a;overflow:hidden}
+    .pop{padding:20px}.head{display:flex;align-items:center;gap:11px;border-bottom:1px solid #26304a;padding-bottom:16px}.logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,#6d5dfc,#27c4ff);font-weight:800;font-size:22px}.head h1{font-size:17px;margin:0}.head p{font-size:11px;color:#91a0bd;margin:3px 0 0}.score{display:flex;align-items:center;justify-content:space-between;background:#151e35;border:1px solid #293653;border-radius:12px;padding:15px;margin-top:22px}.label{display:block;color:#93a2c0;font-size:11px;margin-bottom:5px}.num{font-size:29px;font-weight:800}.badge{padding:6px 9px;border-radius:6px;background:#5d1d2b;color:#ffd9df;text-transform:uppercase;font-size:11px;font-weight:700}.pop h2{font-size:13px;margin:20px 0 8px}.pop ul{padding-left:18px;color:#b8c4dc;font-size:12px;line-height:1.7}.rec{font-size:12px;color:#f5cc8a;line-height:1.5}.btn{width:100%;margin-top:16px;padding:10px;border:0;border-radius:8px;background:#635bff;color:#fff;font-weight:700}.foot{text-align:center;color:#657493;font-size:10px;margin-top:18px}
+    .warning{position:fixed;top:78px;left:50%;transform:translateX(-50%);width:min(760px,90vw);z-index:4;background:#170b0b;color:#fff;border:1px solid #9f3642;border-radius:12px;padding:14px 16px;box-shadow:0 10px 30px #000b}.warning strong{color:#ffd4d8}.warning .title{font-weight:800;margin-bottom:5px}.warning .small{font-size:13px;color:#ffd6d6}
+    .legend{color:#91a0bd;font-size:12px;text-align:center;margin-top:22px;width:100%}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="browser">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><div class="addr">https://secure-login.example.com/account/verify</div></div>
+      <div class="page"><h2>Account Verification</h2><p>Sign in to continue. This is a simulated phishing page used only for the Innovex Security preview.</p><div class="fake-card">Username &nbsp;&nbsp;••••••••<br><br>Password &nbsp;&nbsp;••••••••</div></div>
+    </div>
+    <div class="popup"><div class="pop"><div class="head"><div class="logo">I</div><div><h1>Innovex Security</h1><p>Browser Protection</p></div></div><div class="score"><div><span class="label">Risk Score</span><span class="num">85/100</span></div><span class="badge">Critical</span></div><h2>Detection indicators</h2><ul><li>Security-sensitive terms detected.</li><li>URL has phishing-like account verification signals.</li><li>Threat-intelligence checks can flag known malicious URLs.</li></ul><p class="rec">Do not open this URL or enter credentials, OTPs, or payment details until independently verified.</p><button class="btn">Scan again</button><div class="foot">Protecting your browsing with Innovex</div></div></div>
+  </div>
+  <div class="warning"><div class="title">⚠️ Innovex Security Warning</div><div>This page may be dangerous. Risk level: <strong>Critical (85/100)</strong>.</div><div class="small">Do not enter passwords, OTPs, or payment information.</div></div>
+  <div class="legend">SIH Part 2 desktop/browser protection concept preview</div>
+</body>
+</html>
