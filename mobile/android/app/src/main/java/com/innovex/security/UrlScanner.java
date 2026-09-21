@@ -136,7 +136,7 @@ public final class UrlScanner {
                 indicators.add("The URL does not use HTTPS.");
             }
 
-            if (host.matches("^(?:\d{1,3}\.){3}\d{1,3}$") || host.contains(":")) {
+            if (host.matches("^(?:\\d{1,3}\\.){3}\\d{1,3}$") || host.contains(":")) {
                 score += 25;
                 indicators.add("The URL uses an IP address instead of a normal domain name.");
             }
