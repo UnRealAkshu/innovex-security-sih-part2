@@ -72,66 +72,8 @@ public class NotificationThreatService extends NotificationListenerService {
         builder.append(text);
     }
 
-    private void createChannel() {
-        if (Build.VERSION.SDK_INT < 26) return;
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager == null) return;
-
-        NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "Innovex Threat Alerts",
-                NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription("Warnings for suspicious links detected in app notifications.");
-        manager.createNotificationChannel(channel);
-    }
-
     private void postThreatNotification(UrlScanner.Result result, String sourcePackage) {
-        if (Build.VERSION.SDK_INT >= 33
-                && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
-
-        createChannel();
-
-        String label = result.severity.toUpperCase() + " risk link";
-        String body = "Risk score " + result.riskScore + "/100 • Tap to review in Innovex.";
-
-        Intent intent = new Intent(this, ShareScanActivity.class);
-        intent.setAction(Intent.ACTION_SEND);
-        intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TEXT, result.url);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                this,
-                Math.abs(result.url.hashCode()),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        String source = sourcePackage == null ? "another app" : sourcePackage;
-        String details = result.indicators.isEmpty()
-                ? "No indicator details were returned."
-                : result.indicators.get(0);
-
-        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(this, CHANNEL_ID)
-                : new Notification.Builder(this);
-
-        builder.setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle("🛡 Innovex: " + label)
-                .setContentText(body)
-                .setStyle(new Notification.BigTextStyle()
-                        .bigText(body + "\nSource: " + source + "\n" + details))
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .setCategory(Notification.CATEGORY_ERROR)
-                .setPriority(Notification.PRIORITY_HIGH);
-
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.notify(Math.abs(result.url.hashCode()), builder.build());
-        }
+        ThreatAlertNotifier.show(this, result, sourcePackage);
     }
 
     @Override
