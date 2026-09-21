@@ -74,8 +74,9 @@ public class MainActivity extends Activity {
         TextView title = text("Innovex Security", 28, Color.WHITE, true);
         title.setPadding(0, dp(18), 0, dp(6));
         root.addView(title);
-        root.addView(text("Real-time mobile protection for links in messages and websites.", 15,
-                Color.rgb(170, 183, 208), false));
+        root.addView(text(
+                "Real-time protection that automatically finds links in messages and checks websites before they open.",
+                15, Color.rgb(170, 183, 208), false));
 
         TextView protectionTitle = text("Protection", 19, Color.WHITE, true);
         protectionTitle.setPadding(0, dp(28), 0, dp(12));
@@ -101,33 +102,36 @@ public class MainActivity extends Activity {
         webParams.topMargin = dp(4);
         root.addView(webButton, webParams);
 
-        TextView flow = text(
-                "Message protection: notification → URL extraction → Innovex scan → risk alert.\n\n"
-                        + "Web Shield: browser link → Innovex scan → warning → continue or go back.",
-                13, Color.rgb(190, 200, 220), false);
-        flow.setPadding(0, dp(18), 0, 0);
-        root.addView(flow);
+        TextView autoTitle = text("Automatic link flow", 19, Color.WHITE, true);
+        autoTitle.setPadding(0, dp(28), 0, dp(12));
+        root.addView(autoTitle);
 
-        TextView testTitle = text("Testing", 19, Color.WHITE, true);
+        root.addView(text(
+                "• WhatsApp / Telegram / SMS notification → Innovex extracts the URL automatically → scan → risk alert.\n\n"
+                        + "• Tap a web link → Innovex Web Shield receives the URL automatically → scan → Low / Medium / High / Critical → continue or go back.\n\n"
+                        + "• Share a link from any app → Share → Innovex Security → the shared URL is extracted automatically. No URL needs to be hardcoded in the app.",
+                13, Color.rgb(190, 200, 220), false));
+
+        TextView testTitle = text("Quick test", 19, Color.WHITE, true);
         testTitle.setPadding(0, dp(28), 0, dp(12));
         root.addView(testTitle);
 
-        Button demo = new Button(this);
-        demo.setText("Test a URL manually");
-        demo.setOnClickListener(v -> {
-            Intent intent = new Intent(this, ShareScanActivity.class);
-            intent.setAction(Intent.ACTION_SEND);
-            intent.setType("text/plain");
-            intent.putExtra(Intent.EXTRA_TEXT,
-                    "https://example.com/login/verify/account/password/secure/update/confirm/bank/payment/wallet?user=1&verify=2&password=3&account=4&secure=5&token=6");
-            startActivity(intent);
-        });
-        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(-1, dp(52));
-        buttonParams.topMargin = dp(4);
-        root.addView(demo, buttonParams);
+        Button shareHint = new Button(this);
+        shareHint.setText("See how to test the automatic flow");
+        shareHint.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Test Innovex automatically")
+                .setMessage(
+                        "1. Enable Message Protection.\n\n"
+                                + "2. Send a message to this emulator containing an HTTP(S) link.\n\n"
+                                + "3. Innovex will extract the URL from the notification and show a risk alert automatically.\n\n"
+                                + "4. For Web Shield, tap a link in an app and let Android route it through Innovex.\n\n"
+                                + "5. For Share to Scan, use any app's Share button and choose Innovex Security.")
+                .setPositiveButton("Got it", null)
+                .show());
+        root.addView(shareHint, new LinearLayout.LayoutParams(-1, dp(52)));
 
         root.addView(text(
-                "Message protection requires notification access. Web Shield can ask Android to make Innovex the default browser.",
+                "The production flow is automatic: URLs come from Android intents and notifications. The app does not rely on a fixed test URL.",
                 12, Color.rgb(101, 116, 147), false));
 
         scrollView.addView(root);
