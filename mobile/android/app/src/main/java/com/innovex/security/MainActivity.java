@@ -17,6 +17,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -117,12 +119,33 @@ public class MainActivity extends Activity {
         testTitle.setPadding(0, dp(28), 0, dp(12));
         root.addView(testTitle);
 
+        final EditText testMessageInput = new EditText(this);
+        testMessageInput.setHint("Paste a complete message here to simulate WhatsApp/Telegram");
+        testMessageInput.setGravity(Gravity.TOP);
+        testMessageInput.setMinLines(4);
+        testMessageInput.setTextColor(Color.WHITE);
+        testMessageInput.setHintTextColor(Color.rgb(115, 128, 154));
+        testMessageInput.setText(
+                "WhatsApp • Unknown contact\n"
+                        + "Your account will be suspended. Verify immediately:\n"
+                        + "https://example.com/login/verify/account/password/secure/update/confirm/bank/payment/wallet?user=1&verify=2&password=3&account=4&secure=5&token=6");
+        LinearLayout.LayoutParams messageInputParams = new LinearLayout.LayoutParams(-1, dp(140));
+        root.addView(testMessageInput, messageInputParams);
+
+        Button simulateMessage = new Button(this);
+        simulateMessage.setText("Simulate Incoming Message");
+        simulateMessage.setOnClickListener(v -> simulateIncomingMessage(testMessageInput.getText().toString()));
+        LinearLayout.LayoutParams simulateParams = new LinearLayout.LayoutParams(-1, dp(52));
+        simulateParams.topMargin = dp(8);
+        root.addView(simulateMessage, simulateParams);
+
         final EditText testUrlInput = new EditText(this);
-        testUrlInput.setHint("Paste a URL here for testing");
+        testUrlInput.setHint("Or paste a URL for a direct scanner test");
         testUrlInput.setSingleLine(true);
         testUrlInput.setTextColor(Color.WHITE);
         testUrlInput.setHintTextColor(Color.rgb(115, 128, 154));
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, dp(52));
+        inputParams.topMargin = dp(12);
         root.addView(testUrlInput, inputParams);
 
         Button scanTest = new Button(this);
@@ -152,18 +175,45 @@ public class MainActivity extends Activity {
                                 + "• WhatsApp / Telegram / SMS notification → Innovex extracts the URL automatically.\n\n"
                                 + "• Tap a web link → Innovex Web Shield receives the URL automatically.\n\n"
                                 + "• Share text from any app → Innovex extracts the URL automatically.\n\n"
-                                + "The box above is only a local test tool; users do not need to paste URLs during normal use.")
+                                + "The simulator above only demonstrates that the message itself can be scanned. Normal users do not paste URLs into Innovex.")
                 .setPositiveButton("Got it", null)
                 .show());
         root.addView(shareHint, new LinearLayout.LayoutParams(-1, dp(52)));
 
         root.addView(text(
-                "Testing only: paste a URL above to exercise the same Innovex scanner. Normal users get URLs automatically from notifications, browser intents, or the Android share sheet.",
+                "Prototype demo: the simulator uses the same URL extractor + scanner + warning notification as the real NotificationListenerService path.",
                 12, Color.rgb(101, 116, 147), false));
 
         scrollView.addView(root);
         setContentView(scrollView);
         updateProtectionStatus();
+    }
+
+
+    private void simulateIncomingMessage(String message) {
+        final String url = UrlScanner.extractUrl(message);
+        if (url == null) {
+            Toast.makeText(this, "No HTTP(S) link found in the message.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Toast.makeText(this, "Innovex found a link — scanning it now…", Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            UrlScanner.Result result = UrlScanner.scan(url);
+            runOnUiThread(() -> {
+                if (result.riskScore >= 25) {
+                    ThreatAlertNotifier.show(this, result, "WhatsApp (simulated)");
+                    Toast.makeText(this,
+                            "Threat alert posted: " + result.riskScore + "/100 " + result.severity,
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this,
+                            "Low risk: " + result.riskScore + "/100",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
     }
 
     private void updateProtectionStatus() {
