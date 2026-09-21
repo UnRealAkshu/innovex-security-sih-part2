@@ -76,6 +76,8 @@ public class ShareScanActivity extends Activity {
         String sharedText = null;
         if (Intent.ACTION_SEND.equals(intent.getAction())) {
             sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);
+        } else if (Intent.ACTION_PROCESS_TEXT.equals(intent.getAction())) {
+            sharedText = intent.getStringExtra(Intent.EXTRA_PROCESS_TEXT);
         }
         if (sharedText == null && intent.getData() != null) {
             sharedText = intent.getData().toString();
