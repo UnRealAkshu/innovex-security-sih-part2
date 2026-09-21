@@ -125,7 +125,7 @@ public class NotificationThreatService extends NotificationListenerService {
                         .bigText(body + "\nSource: " + source + "\n" + details))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
-                .setCategory(Notification.CATEGORY_WARNING)
+                .setCategory(Notification.CATEGORY_ERROR)
                 .setPriority(Notification.PRIORITY_HIGH);
 
         NotificationManager manager = getSystemService(NotificationManager.class);
