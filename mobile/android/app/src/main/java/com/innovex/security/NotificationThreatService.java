@@ -1,7 +1,6 @@
 package com.innovex.security;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
@@ -16,14 +15,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class NotificationThreatService extends NotificationListenerService {
-    private static final String CHANNEL_ID = "innovex_threats_v1";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Set<String> inFlight = new HashSet<>();
-
-    @Override
-    public void onListenerConnected() {
-        createChannel();
-    }
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
