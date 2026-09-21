@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 
 public final class UrlScanner {
     private static final String API_BASE_URL = "http://10.0.2.2:3000";
-    private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\s<>"']+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s<>\"\']+", Pattern.CASE_INSENSITIVE);
 
     private UrlScanner() {}
 
