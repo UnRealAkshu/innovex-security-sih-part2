@@ -14,6 +14,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -116,22 +117,48 @@ public class MainActivity extends Activity {
         testTitle.setPadding(0, dp(28), 0, dp(12));
         root.addView(testTitle);
 
+        final EditText testUrlInput = new EditText(this);
+        testUrlInput.setHint("Paste a URL here for testing");
+        testUrlInput.setSingleLine(true);
+        testUrlInput.setTextColor(Color.WHITE);
+        testUrlInput.setHintTextColor(Color.rgb(115, 128, 154));
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, dp(52));
+        root.addView(testUrlInput, inputParams);
+
+        Button scanTest = new Button(this);
+        scanTest.setText("Scan Test URL");
+        scanTest.setOnClickListener(v -> {
+            String value = testUrlInput.getText().toString().trim();
+            if (value.isEmpty()) {
+                testUrlInput.setError("Enter an HTTP(S) URL");
+                return;
+            }
+            Intent intent = new Intent(this, ShareScanActivity.class);
+            intent.setAction(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_TEXT, value);
+            startActivity(intent);
+        });
+        LinearLayout.LayoutParams scanParams = new LinearLayout.LayoutParams(-1, dp(52));
+        scanParams.topMargin = dp(8);
+        root.addView(scanTest, scanParams);
+
         Button shareHint = new Button(this);
-        shareHint.setText("See how to test the automatic flow");
+        shareHint.setText("How the automatic protection works");
         shareHint.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Test Innovex automatically")
+                .setTitle("Automatic protection")
                 .setMessage(
-                        "1. Enable Message Protection.\n\n"
-                                + "2. Send a message to this emulator containing an HTTP(S) link.\n\n"
-                                + "3. Innovex will extract the URL from the notification and show a risk alert automatically.\n\n"
-                                + "4. For Web Shield, tap a link in an app and let Android route it through Innovex.\n\n"
-                                + "5. For Share to Scan, use any app's Share button and choose Innovex Security.")
+                        "Production flow:\n\n"
+                                + "• WhatsApp / Telegram / SMS notification → Innovex extracts the URL automatically.\n\n"
+                                + "• Tap a web link → Innovex Web Shield receives the URL automatically.\n\n"
+                                + "• Share text from any app → Innovex extracts the URL automatically.\n\n"
+                                + "The box above is only a local test tool; users do not need to paste URLs during normal use.")
                 .setPositiveButton("Got it", null)
                 .show());
         root.addView(shareHint, new LinearLayout.LayoutParams(-1, dp(52)));
 
         root.addView(text(
-                "The production flow is automatic: URLs come from Android intents and notifications. The app does not rely on a fixed test URL.",
+                "Testing only: paste a URL above to exercise the same Innovex scanner. Normal users get URLs automatically from notifications, browser intents, or the Android share sheet.",
                 12, Color.rgb(101, 116, 147), false));
 
         scrollView.addView(root);
